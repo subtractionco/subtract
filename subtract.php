@@ -3,7 +3,7 @@
  * Plugin Name:       Subtract
  * Plugin URI:        https://github.com/subtractionco/subtract
  * Description:       Switches off what most WordPress sites never use. One file, no settings. Each removal is explained below and can be kept with one line in wp-config.php.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Subtraction
@@ -21,7 +21,7 @@
  *
  *     define('SUBTRACT_KEEP', 'comments, xmlrpc');
  *
- * The names: comments, xmlrpc, emoji, embeds, head, users, dashboard, editor.
+ * The names: comments, xmlrpc, emoji, embeds, head, users, dashboard, forms, editor.
  * Nothing is deleted from your database. Deactivate the plugin and everything is back as it was.
  */
 
@@ -231,6 +231,81 @@ if (subtract_on('dashboard')) {
     // On "admin_init", because WordPress adds the Welcome panel after plugins load.
     add_action('admin_init', function () { remove_action('welcome_panel', 'wp_welcome_panel'); });
     add_action('wp_dashboard_setup', function () { remove_meta_box('dashboard_primary', 'dashboard', 'side'); });
+}
+
+
+/* ---------------------------------------------------------------------------------------------
+ * forms
+ * Spam sent through your contact forms (Elementor Forms and Contact Form 7).
+ *
+ * Why: closing comments moves the spam to the contact form. Most of it comes from bots that post
+ * straight to the form's address without opening the page, or fill in every field they find.
+ * The rest is pasted in by people working through lists of sites, usually in another script
+ * with a link to a shop. Each form gets two invisible checks, and every message three rules:
+ *   - A hidden field people never see. Bots fill it in.
+ *   - A signed time stamp. A message sent without one (the page was never opened), within three
+ *     seconds of the page loading, or from a page more than 30 days old is refused.
+ *   - On a site whose language uses the Latin alphabet, a message mostly in another script is
+ *     refused, as is one with three or more links or a link to a .ru or .su address.
+ * Nothing is stored and no outside service is asked. A refused visitor is told the message could
+ * not be sent and asked to get in touch another way. Keep "forms" if a check gets in your way.
+ * ------------------------------------------------------------------------------------------- */
+if (subtract_on('forms')) {
+    /** The two hidden fields, added to every form. */
+    function subtract_form_fields(): string {
+        $t = (string) time();
+        return '<span aria-hidden="true" style="position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden">'
+            . '<label>Leave this empty <input type="text" name="subtract_hp" value="" tabindex="-1" autocomplete="off"></label></span>'
+            . '<input type="hidden" name="subtract_t" value="' . esc_attr($t . '.' . hash_hmac('sha256', $t, wp_salt('nonce'))) . '">';
+    }
+
+    /** Why a submission is spam, or an empty string when it is not. */
+    function subtract_form_spam(array $values): string {
+        if (!empty($_POST['subtract_hp'])) return 'hidden field filled in';
+        $parts = explode('.', (string) ($_POST['subtract_t'] ?? ''), 2);
+        if (count($parts) !== 2 || !hash_equals(hash_hmac('sha256', $parts[0], wp_salt('nonce')), $parts[1])) return 'no time stamp';
+        $age = time() - (int) $parts[0];
+        if ($age < 3) return 'sent too fast';
+        if ($age > 30 * DAY_IN_SECONDS) return 'page too old';
+
+        $text = implode("\n", array_map(function ($v) { return is_array($v) ? implode(' ', $v) : (string) $v; }, $values));
+        if (preg_match_all('#(https?://|www\.)#i', $text) >= 3) return 'too many links';
+        if (preg_match('#(https?://|www\.)[^\s/]+\.(ru|su|xn--p1ai)(/|\s|$)#i', $text)) return 'link to a .ru or .su address';
+        // On an English, Afrikaans, French (and so on) site, a message mostly in another script is not for you.
+        $latin_site = !preg_match('/^(ru|uk|bg|sr|mk|be|kk|zh|ja|ko|ar|fa|he|th|hi|el)/', get_locale());
+        $letters = preg_match_all('/\p{L}/u', $text);
+        if ($latin_site && $letters >= 20 && preg_match_all('/\p{Latin}/u', $text) / $letters < 0.5) return 'written in another script';
+        return '';
+    }
+
+    $subtract_sorry = 'Sorry, your message could not be sent. Please get in touch another way.';
+
+    // Elementor Forms
+    add_filter('elementor/widget/render_content', function ($content, $widget) {
+        if (!is_object($widget) || !method_exists($widget, 'get_name') || $widget->get_name() !== 'form') return $content;
+        return preg_replace('#</form>#i', subtract_form_fields() . '</form>', (string) $content, 1);
+    }, 10, 2);
+    add_action('elementor_pro/forms/validation', function ($record, $ajax) use ($subtract_sorry) {
+        $fields = (array) $record->get('fields');
+        $why = subtract_form_spam(array_map(function ($f) { return $f['value'] ?? ''; }, $fields));
+        if ($why === '') return;
+        do_action('subtract_form_refused', $why, 'elementor');
+        $first = array_key_first($fields);
+        $ajax->add_error($first !== null ? $first : 'subtract', $subtract_sorry);
+        $ajax->add_error_message($subtract_sorry);
+    }, 10, 2);
+
+    // Contact Form 7
+    add_filter('wpcf7_form_elements', function ($html) { return $html . subtract_form_fields(); });
+    add_filter('wpcf7_spam', function ($spam, $submission = null) {
+        if ($spam) return $spam;
+        $data = is_object($submission) && method_exists($submission, 'get_posted_data') ? (array) $submission->get_posted_data() : [];
+        $why = subtract_form_spam($data);
+        if ($why === '') return false;
+        do_action('subtract_form_refused', $why, 'cf7');
+        if (is_object($submission) && method_exists($submission, 'add_spam_log')) $submission->add_spam_log(['agent' => 'subtract', 'reason' => $why]);
+        return true;
+    }, 10, 2);
 }
 
 

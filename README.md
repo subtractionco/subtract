@@ -15,6 +15,7 @@ One file. No settings page, no database tables, nothing to configure. Every remo
 | `head` | The WordPress version tag, Windows Live Writer, shortlinks, previous and next post links | The version tag tells scanners which sites run old, vulnerable releases. The rest serve tools nobody uses any more. |
 | `users` | `/?author=1`, the users API and the users sitemap, for visitors who are not logged in | They hand out the login names that password-guessing bots need. Author archives at `/author/name/` still work. |
 | `dashboard` | The Welcome panel and the WordPress Events and News box | The first thing you see after logging in, and neither is about your site. |
+| `forms` | Spam through Elementor Forms and Contact Form 7: a hidden field bots fill in, a signed time stamp, and three rules for the message itself | Closing comments moves the spam to the contact form. Messages posted without opening the page, sent within three seconds, mostly in another script on a Latin-alphabet site, or carrying three or more links or a .ru link are refused. Nothing is stored and no outside service is asked. |
 | `editor` | Editing theme and plugin code from the dashboard | Anyone who gets into an admin account can use it to run code on your server, and a typo there has no undo. |
 
 Nothing is deleted. Existing comments stay in your database, hidden. Deactivate the plugin and everything is back as it was.
@@ -35,7 +36,7 @@ Name the blocks you want to keep in `wp-config.php`, above the line that says *T
 define('SUBTRACT_KEEP', 'comments, xmlrpc');
 ```
 
-Keep `xmlrpc` if you use Jetpack or publish from an old desktop or mobile app. Keep `comments` if your site takes comments. Keep `users` if a tool reads your users from the REST API without logging in.
+Keep `xmlrpc` if you use Jetpack or publish from an old desktop or mobile app. Keep `comments` if your site takes comments. Keep `users` if a tool reads your users from the REST API without logging in. Keep `forms` if your forms take messages in a script your site's language doesn't use, or links are normal in them.
 
 ## Check it worked
 
@@ -44,10 +45,11 @@ Open your site, view the page source and search for `wp-emoji` or `generator`: b
 - `https://your-site/xmlrpc.php` answers *XML-RPC is off.*
 - `https://your-site/wp-json/wp/v2/users` answers *No route was found*
 - `https://your-site/?author=1` takes you to the home page
+- View the source of a page with a contact form and search for `subtract_t`: it should be there, just before `</form>`
 
 ## Why we made it
 
-We are [Subtraction](https://subtraction.co), a technology and product studio in Cape Town. We remove what is not needed so that what remains works better. Most WordPress sites we look after had the same features switched on and unused, and one of them had the comment spam to show for it. This is the file we now add to every site.
+We are [Subtraction](https://subtraction.co), a technology and product studio in Cape Town. We remove what is not needed so that what remains works better. Most WordPress sites we look after had the same features switched on and unused, and one of them had the comment spam, and then the form spam, to show for it. This is the file we now add to every site.
 
 Issues and pull requests are welcome. A new block should earn its place: something most sites do not use, that costs speed, security or attention, and that can be removed without breaking anything else.
 
