@@ -27,26 +27,40 @@
 
 if (!defined('ABSPATH')) exit;
 
-/** True when a block is on, that is, not named in SUBTRACT_KEEP. */
-function subtract_on(string $block): bool {
-    static $keep = null;
-    if ($keep === null) {
-        $keep = defined('SUBTRACT_KEEP') ? array_filter(array_map('trim', explode(',', strtolower((string) SUBTRACT_KEEP)))) : [];
+// Two copies running at once (an older one in another folder, or in mu-plugins) would stop the site. If another
+// copy has already loaded, this one does nothing and says where the other one is, so it can be removed.
+if (function_exists('subtract_on')) {
+    add_action('admin_notices', function () {
+        if (!current_user_can('activate_plugins')) return;
+        $other = (new ReflectionFunction('subtract_on'))->getFileName();
+        echo '<div class="notice notice-warning"><p><strong>Subtract is installed twice.</strong> Another copy is already running from <code>' . esc_html(str_replace(ABSPATH, '', (string) $other)) . '</code>. Delete that copy, and this one takes over.</p></div>';
+    });
+    return;
+}
+
+// Declared at run time, not when the file is read, so the check above can stop a second copy first.
+if (!function_exists('subtract_on')) {
+    /** True when a block is on, that is, not named in SUBTRACT_KEEP. */
+    function subtract_on(string $block): bool {
+        static $keep = null;
+        if ($keep === null) {
+            $keep = defined('SUBTRACT_KEEP') ? array_filter(array_map('trim', explode(',', strtolower((string) SUBTRACT_KEEP)))) : [];
+        }
+        return !in_array($block, $keep, true);
     }
-    return !in_array($block, $keep, true);
-}
 
-/** Stops the request with a short plain-text answer, before WordPress does any more work. */
-function subtract_refuse(string $message): void {
-    status_header(403);
-    nocache_headers();
-    header('Content-Type: text/plain; charset=utf-8');
-    exit($message);
-}
+    /** Stops the request with a short plain-text answer, before WordPress does any more work. */
+    function subtract_refuse(string $message): void {
+        status_header(403);
+        nocache_headers();
+        header('Content-Type: text/plain; charset=utf-8');
+        exit($message);
+    }
 
-/** The file part of the requested path, e.g. "xmlrpc.php". */
-function subtract_script(): string {
-    return basename((string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH));
+    /** The file part of the requested path, e.g. "xmlrpc.php". */
+    function subtract_script(): string {
+        return basename((string) parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH));
+    }
 }
 
 
