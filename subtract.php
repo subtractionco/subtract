@@ -3,7 +3,7 @@
  * Plugin Name:       Subtract
  * Plugin URI:        https://github.com/subtractionco/subtract
  * Description:       Switches off what most WordPress sites never use. One file, no settings. Each removal is explained below and can be kept with one line in wp-config.php.
- * Version:           1.1.0
+ * Version:           1.2.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Subtraction
@@ -255,22 +255,30 @@ if (subtract_on('dashboard')) {
  * Why: closing comments moves the spam to the contact form. Most of it comes from bots that post
  * straight to the form's address without opening the page, or fill in every field they find.
  * The rest is pasted in by people working through lists of sites, usually in another script
- * with a link to a shop. Each form gets two invisible checks, and every message three rules:
+ * with a link to a shop. Each form gets three invisible checks, and every message four rules:
  *   - A hidden field people never see. Bots fill it in.
  *   - A signed time stamp. A message sent without one (the page was never opened), within three
  *     seconds of the page loading, or from a page more than 30 days old is refused.
+ *   - A field filled in only when a person presses a key, taps or clicks on the page. Scripts that
+ *     copy the form and post it without a browser leave it empty.
  *   - On a site whose language uses the Latin alphabet, a message mostly in another script is
- *     refused, as is one with three or more links or a link to a .ru or .su address.
+ *     refused, as is one with three or more links, a link to a .ru or .su address, a short link
+ *     (bit.ly and the like), or an email address on the site's own domain.
  * Nothing is stored and no outside service is asked. A refused visitor is told the message could
  * not be sent and asked to get in touch another way. Keep "forms" if a check gets in your way.
  * ------------------------------------------------------------------------------------------- */
 if (subtract_on('forms')) {
-    /** The two hidden fields, added to every form. */
+    /** The hidden fields, added to every form. */
     function subtract_form_fields(): string {
         $t = (string) time();
         return '<span aria-hidden="true" style="position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden">'
             . '<label>Leave this empty <input type="text" name="subtract_hp" value="" tabindex="-1" autocomplete="off"></label></span>'
-            . '<input type="hidden" name="subtract_t" value="' . esc_attr($t . '.' . hash_hmac('sha256', $t, wp_salt('nonce'))) . '">';
+            . '<input type="hidden" name="subtract_t" value="' . esc_attr($t . '.' . hash_hmac('sha256', $t, wp_salt('nonce'))) . '">'
+            . '<input type="hidden" name="subtract_h" value="" data-v="' . esc_attr(hash_hmac('sha256', 'human' . $t, wp_salt('nonce'))) . '">'
+            // Filled in only when a person touches the page: a key, a tap or a click. Scripts that post the form
+            // without a browser, or browsers nobody is using, never fill it in.
+            . '<script>(function(){if(window.subtractH)return;window.subtractH=1;function f(){document.querySelectorAll(\'input[name="subtract_h"]\').forEach(function(i){i.value=i.getAttribute("data-v")})}'
+            . '["keydown","pointerdown","touchstart","focusin"].forEach(function(e){document.addEventListener(e,f,{passive:true})})})();</script>';
     }
 
     /** Why a submission is spam, or an empty string when it is not. */
@@ -281,10 +289,16 @@ if (subtract_on('forms')) {
         $age = time() - (int) $parts[0];
         if ($age < 3) return 'sent too fast';
         if ($age > 30 * DAY_IN_SECONDS) return 'page too old';
+        if (!hash_equals(hash_hmac('sha256', 'human' . $parts[0], wp_salt('nonce')), (string) ($_POST['subtract_h'] ?? ''))) return 'nobody used the page';
 
         $text = implode("\n", array_map(function ($v) { return is_array($v) ? implode(' ', $v) : (string) $v; }, $values));
         if (preg_match_all('#(https?://|www\.)#i', $text) >= 3) return 'too many links';
         if (preg_match('#(https?://|www\.)[^\s/]+\.(ru|su|xn--p1ai)(/|\s|$)#i', $text)) return 'link to a .ru or .su address';
+        // Short links hide where they go. Nobody sends one through a contact form for a good reason.
+        if (preg_match('#(https?://|www\.)(bit\.ly|tinyurl\.com|t\.co|goo\.gl|is\.gd|ow\.ly|buff\.ly|rebrand\.ly|cutt\.ly|shorturl\.at|rb\.gy|t\.ly|tumy\.cc|s\.id|v\.gd|bitly\.ws)/#i', $text)) return 'short link';
+        // Visitors don't write from your own domain. Spammers often pretend to.
+        $own = preg_replace('/^www\./', '', (string) parse_url(home_url(), PHP_URL_HOST));
+        if ($own !== '' && preg_match('/@' . preg_quote($own, '/') . '\b/i', $text)) return 'email address on this site’s own domain';
         // On an English, Afrikaans, French (and so on) site, a message mostly in another script is not for you.
         $latin_site = !preg_match('/^(ru|uk|bg|sr|mk|be|kk|zh|ja|ko|ar|fa|he|th|hi|el)/', get_locale());
         $letters = preg_match_all('/\p{L}/u', $text);
