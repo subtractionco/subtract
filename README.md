@@ -38,6 +38,10 @@ define('SUBTRACT_KEEP', 'comments, xmlrpc');
 
 Keep `xmlrpc` if you use Jetpack or publish from an old desktop or mobile app. Keep `comments` if your site takes comments. Keep `users` if a tool reads your users from the REST API without logging in. Keep `forms` if your forms take messages in a script your site's language doesn't use, or links are normal in them.
 
+## See what it does on your site
+
+On the Plugins screen, **View details** under Subtract opens a page listing every block, whether it is removed or kept on that site, why, and how to keep any of it.
+
 ## Check it worked
 
 Open your site, view the page source and search for `wp-emoji` or `generator`: both should be gone. Then try these, logged out:

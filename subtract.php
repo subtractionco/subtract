@@ -3,7 +3,7 @@
  * Plugin Name:       Subtract
  * Plugin URI:        https://github.com/subtractionco/subtract
  * Description:       Switches off what most WordPress sites never use. One file, no settings. Each removal is explained below and can be kept with one line in wp-config.php.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Subtraction
@@ -347,4 +347,63 @@ if (subtract_on('forms')) {
  * ------------------------------------------------------------------------------------------- */
 if (subtract_on('editor') && !defined('DISALLOW_FILE_EDIT')) {
     define('DISALLOW_FILE_EDIT', true);
+}
+
+
+/* ---------------------------------------------------------------------------------------------
+ * View details
+ * The "View details" link on the Plugins screen opens a page that says exactly what Subtract
+ * removes on this site, why, and how to keep any of it. Nothing is fetched from anywhere: the
+ * page is written from this file.
+ * ------------------------------------------------------------------------------------------- */
+if (is_admin()) {
+    function subtract_blocks(): array {
+        return [
+            'comments' => ['Comments, pingbacks and trackbacks, everywhere, plus the comment feeds and the Comments menu', 'Bots post straight to <code>wp-comments-post.php</code> and the comments API even when your theme shows no form. Closing comments in Settings leaves old posts open.'],
+            'xmlrpc' => ['XML-RPC and the pingback header', 'A favourite target for password guessing: one request can try hundreds of passwords. The block editor and the WordPress apps use the REST API instead.'],
+            'emoji' => ['The emoji script and styles on every page, in the dashboard and in emails', 'Every browser and phone has drawn emoji natively for years. Emoji you type keep working.'],
+            'embeds' => ['The discovery links and script that let other sites embed your posts as cards', 'Few sites want it, and the script loads everywhere. Embedding YouTube, Vimeo and others in your own posts keeps working.'],
+            'head' => ['The WordPress version tag, Windows Live Writer, shortlinks, previous and next post links', 'The version tag tells scanners which sites run old, vulnerable releases. The rest serve tools nobody uses any more.'],
+            'users' => ['<code>/?author=1</code>, the users API and the users sitemap, for visitors who are not logged in', 'They hand out the login names that password-guessing bots need. Author archives at <code>/author/name/</code> still work.'],
+            'dashboard' => ['The Welcome panel and the WordPress Events and News box', 'The first thing you see after logging in, and neither is about your site.'],
+            'forms' => ['Spam through Elementor Forms and Contact Form 7: a hidden field bots fill in, a signed time stamp, a check that a person actually used the page, and four rules for the message itself', 'Closing comments moves the spam to the contact form. Refused: messages posted without opening the page, sent within three seconds, sent without anyone pressing a key, tapping or clicking, mostly in another script on a Latin-alphabet site, or carrying three or more links, a .ru link, a short link or an email address on your own domain. Nothing is stored and no outside service is asked.'],
+            'editor' => ['Editing theme and plugin code from the dashboard', 'Anyone who gets into an admin account can use it to run code on your server, and a typo there has no undo.'],
+        ];
+    }
+
+    add_filter('plugin_row_meta', function ($links, $file) {
+        if ($file !== plugin_basename(__FILE__) && basename($file) !== 'subtract.php') return $links;
+        $url = self_admin_url('plugin-install.php?tab=plugin-information&plugin=subtract&TB_iframe=true&width=772&height=640');
+        $links[] = '<a href="' . esc_url($url) . '" class="thickbox open-plugin-details-modal" aria-label="More information about Subtract">View details</a>';
+        return $links;
+    }, 10, 2);
+
+    add_filter('plugins_api', function ($result, $action, $args) {
+        if ($action !== 'plugin_information' || ($args->slug ?? '') !== 'subtract') return $result;
+        $data = get_file_data(__FILE__, ['v' => 'Version', 'wp' => 'Requires at least', 'php' => 'Requires PHP']);
+        $rows = '';
+        foreach (subtract_blocks() as $name => [$what, $why]) {
+            $on = subtract_on($name);
+            $rows .= '<h3>' . esc_html($name) . ' <small style="font-weight:400;color:' . ($on ? '#1e7a3c' : '#9a5b00') . '">' . ($on ? '· removed on this site' : '· kept on this site') . '</small></h3>'
+                . '<p><strong>What goes:</strong> ' . wp_kses_post($what) . '</p><p><strong>Why:</strong> ' . wp_kses_post($why) . '</p>';
+        }
+        $kept = defined('SUBTRACT_KEEP') ? (string) SUBTRACT_KEEP : '';
+        return (object) [
+            'name' => 'Subtract', 'slug' => 'subtract', 'version' => $data['v'], 'author' => '<a href="https://subtraction.co">Subtraction</a>',
+            'homepage' => 'https://github.com/subtractionco/subtract', 'requires' => $data['wp'], 'requires_php' => $data['php'],
+            'last_updated' => gmdate('Y-m-d', (int) filemtime(__FILE__)), 'download_link' => '', 'external' => true,
+            'sections' => [
+                'description' => '<p>Switches off what most WordPress sites never use. One file, no settings page, nothing stored. Nothing is deleted: deactivate Subtract and everything is back as it was.</p>'
+                    . '<p>' . ($kept !== '' ? 'This site keeps: <code>' . esc_html($kept) . '</code>.' : 'Every block is on for this site.') . '</p>' . $rows,
+                'keep something' => '<p>Name the blocks you want to keep in <code>wp-config.php</code>, above the line that says <em>That&#8217;s all, stop editing!</em>:</p><pre>define(\'SUBTRACT_KEEP\', \'comments, xmlrpc\');</pre>'
+                    . '<p>Keep <code>xmlrpc</code> for Jetpack or an old publishing app, <code>comments</code> if your site takes comments, <code>users</code> if a tool reads users from the REST API without logging in, and <code>forms</code> if a form check gets in your way.</p>',
+                'check it worked' => '<p>Logged out: <code>/xmlrpc.php</code> answers <em>XML-RPC is off.</em>, <code>/wp-json/wp/v2/users</code> answers <em>No route was found</em>, and <code>/?author=1</code> goes to the home page. On a page with a contact form, the source contains <code>subtract_t</code> just before <code>&lt;/form&gt;</code>.</p>',
+                'changelog' => '<h4>1.3.0</h4><ul><li>A “View details” link on the Plugins screen, with this page.</li></ul>'
+                    . '<h4>1.2.0</h4><ul><li>Forms: refuse messages nobody typed into, short links, and senders using the site’s own domain.</li><li>A second copy of Subtract no longer stops the site; it stands down and says where the other copy is.</li></ul>'
+                    . '<h4>1.1.0</h4><ul><li>New <code>forms</code> block: stops spam through Elementor Forms and Contact Form 7.</li></ul>'
+                    . '<h4>1.0.0</h4><ul><li>First release: comments, xmlrpc, emoji, embeds, head, users, dashboard and editor.</li></ul>',
+                'about' => '<p>Made by <a href="https://subtraction.co">Subtraction</a>, a technology and product studio in Cape Town. We remove what is not needed so that what remains works better. MIT licence. Source, issues and pull requests on <a href="https://github.com/subtractionco/subtract">GitHub</a>.</p>',
+            ],
+        ];
+    }, 10, 3);
 }
